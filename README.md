@@ -1,14 +1,5 @@
 # AVITECH_website
 
-## Guide for Editing your Research
-
-1. **Fork the repository** to your own GitHub account.
-2. **Each member of the NNC group is responsible for editing their own `.bib` file**. This can be done either:
-   - Offline: Clone the forked repository to your local machine and edit your `.bib` file.
-   - Online: Edit your `.bib` file directly in the web browser (GitHub web interface).
-3. **After editing**, save your changes and create a pull request to the main repository.
-4. **The admin is responsible for reviewing and merging the latest `.bib` files** from all members.
-
 ## Guide for Editing your Profile
 Display your personal profile on the website.
 
@@ -24,5 +15,16 @@ Display your personal profile on the website.
    - Job title and affiliation  
    - Short biography  
    - Personal website and email  
+
+## Guide for Editing your Research
+
+1. **Fork the repository** to your own GitHub account.
+2. **Each member of the NNC group is responsible for editing their own `.bib` file**. This can be done either:
+   - Offline: Clone the forked repository to your local machine and edit your `.bib` file.
+   - Online: Edit your `.bib` file directly in the web browser (GitHub web interface).
+3. **After editing**, save your changes and create a pull request to the main repository.
+4. **The admin is responsible for reviewing and merging the latest `.bib` files** from all members.
+
+
 
 
