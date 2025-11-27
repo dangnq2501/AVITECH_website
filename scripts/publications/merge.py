@@ -17,6 +17,17 @@ MANUAL_DUPLICATES = {
 # ============================================================================
 MIN_YEAR = 2017  # Only keep publications from this year onwards
 
+# Fields to remove from all entries (e.g., auto-generated metadata)
+FIELDS_TO_REMOVE = ['citation', 'biburl', 'bibsource', 'timestamp']
+
+# Patterns in 'note' field that indicate it should be removed (query metadata)
+NOTE_REMOVE_PATTERNS = [
+    r'Query date:',
+    r'\d+\s+cites?:',
+    r'https://scholar\.google\.com/scholar\?oi=bibs',
+    r'https://scholar\.google\.com/citations\?view_op=view_citation',
+]
+
 # ============================================================================
 
 def parse_bib_file(file_path):
@@ -33,8 +44,9 @@ def parse_bib_file(file_path):
         entry_type = match.group(1)
         entry_key = match.group(2)
         entry_body = match.group(3)
+        raw_entry = match.group(0)
 
-        # Parse fields
+        # Parse fields (for comparison purposes)
         fields = {}
         field_pattern = r'(\w+)\s*=\s*\{([^}]*)\}|(\w+)\s*=\s*"([^"]*)"'
         field_matches = re.finditer(field_pattern, entry_body)
@@ -52,7 +64,7 @@ def parse_bib_file(file_path):
             'type': entry_type,
             'key': entry_key,
             'fields': fields,
-            'raw': match.group(0)
+            'raw': raw_entry  # Keep original raw entry
         })
 
     return entries
@@ -65,6 +77,106 @@ def normalize_text(text):
     text = re.sub(r'[\\{}]', '', text)
     text = re.sub(r'\s+', ' ', text)
     return text.lower().strip()
+
+def remove_fields_from_entry(raw_entry, fields_to_remove):
+    """Remove specified fields from a raw BibTeX entry string."""
+    lines = raw_entry.split('\n')
+    filtered_lines = []
+    skip_line = False
+    current_field_value = []
+    current_field_name = None
+
+    for i, line in enumerate(lines):
+        # Check if this line starts a field that should be removed
+        line_stripped = line.strip()
+        should_skip = False
+
+        # Check for regular fields to remove
+        for field in fields_to_remove:
+            # Match field at the start of the line (with optional whitespace)
+            if re.match(rf'^\s*{field}\s*=', line, re.IGNORECASE):
+                should_skip = True
+                break
+
+        # Special handling for 'note' field - check if it contains query patterns
+        note_match = re.match(r'^\s*note\s*=\s*[{"](.+)', line, re.IGNORECASE)
+        if note_match and not should_skip:
+            # Start capturing the note value
+            current_field_name = 'note'
+            current_field_value = [note_match.group(1)]
+
+            # Check if note ends on same line
+            if line_stripped.endswith('},') or line_stripped.endswith('",'):
+                # Complete note on one line
+                note_content = current_field_value[0].rstrip('"},').rstrip('"').rstrip('}')
+                if should_remove_note(note_content):
+                    should_skip = True
+                    current_field_name = None
+                    current_field_value = []
+                    continue
+                else:
+                    # Keep this note
+                    filtered_lines.append(line)
+                    current_field_name = None
+                    current_field_value = []
+                    continue
+            else:
+                # Multi-line note, need to collect more lines
+                skip_line = True
+                continue
+        elif current_field_name == 'note' and skip_line:
+            # Continuing multi-line note field
+            current_field_value.append(line_stripped)
+
+            if line_stripped.endswith('},') or line_stripped.endswith('",'):
+                # End of multi-line note
+                note_content = ' '.join(current_field_value).rstrip('"},').rstrip('"').rstrip('}')
+                if should_remove_note(note_content):
+                    # Remove all lines of this note
+                    skip_line = False
+                    current_field_name = None
+                    current_field_value = []
+                    continue
+                else:
+                    # Keep this note - need to reconstruct it
+                    # Add the first line
+                    filtered_lines.append('    note = {' + current_field_value[0])
+                    # Add middle lines
+                    for j in range(1, len(current_field_value) - 1):
+                        filtered_lines.append('    ' + current_field_value[j])
+                    # Add last line
+                    filtered_lines.append(line)
+                    skip_line = False
+                    current_field_name = None
+                    current_field_value = []
+                    continue
+            else:
+                continue
+
+        if should_skip:
+            # Skip this line and check if it continues to next lines
+            # (multi-line values end with },)
+            skip_line = True
+            if line_stripped.endswith('},'):
+                skip_line = False
+            continue
+
+        if skip_line:
+            # Check if we've reached the end of the multi-line value
+            if line_stripped.endswith('},'):
+                skip_line = False
+            continue
+
+        filtered_lines.append(line)
+
+    return '\n'.join(filtered_lines)
+
+def should_remove_note(note_content):
+    """Check if a note field contains query metadata that should be removed."""
+    for pattern in NOTE_REMOVE_PATTERNS:
+        if re.search(pattern, note_content, re.IGNORECASE):
+            return True
+    return False
 
 def calculate_similarity(str1, str2):
     """Calculate similarity ratio between two strings."""
@@ -281,10 +393,13 @@ def merge_bib_files(bibs_dir, output_file, similarity_threshold=0.7):
         f.write(f"% Filtered by year (< {MIN_YEAR}): {filtered_count}\n")
         f.write(f"% Filtered incomplete @misc: {filtered_incomplete}\n")
         f.write(f"% Filtered no/invalid year: {filtered_no_year}\n")
-        f.write(f"% Original total: {total_count}\n\n")
+        f.write(f"% Original total: {total_count}\n")
+        f.write(f"% Removed fields: {', '.join(FIELDS_TO_REMOVE)}\n\n")
 
         for entry in unique_entries:
-            f.write(entry['raw'])
+            # Remove unwanted fields from the raw entry
+            cleaned_entry = remove_fields_from_entry(entry['raw'], FIELDS_TO_REMOVE)
+            f.write(cleaned_entry)
             f.write('\n\n')
 
     print(f"\nMerge complete!")
